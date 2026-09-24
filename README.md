@@ -9,7 +9,7 @@ A GitHub Action that installs, authenticates, and configures **Certum SimplySign
 
 ## Features
 
-- **Cross-Architecture Support**: Runs seamlessly on both `x86_64` (e.g. `windows-2022`, `windows-2025`, `windows-latest`) and `ARM64` (e.g. `windows-11-arm64`) GitHub Actions runners.
+- **Cross-Architecture Support**: Runs seamlessly on both `x86_64` (e.g. `windows-2022`, `windows-2025`, `windows-latest`) and `ARM64` (e.g. `windows-11-arm`) GitHub Actions runners.
 - **Automated OOBE Screen Dismissal**: Automatically handles Windows ARM64 GitHub runner quirks where the VM begins with an interactive Out-Of-Box Experience (OOBE) privacy settings screen, tabbing through and dismissing it so GUI automation can proceed.
 - **Last-Second TOTP Generation & Expiry Protection**:
   - Focuses the SimplySign Desktop OTP input field *first*.
@@ -46,7 +46,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ windows-latest, windows-11-arm64 ]
+        os: [ windows-latest, windows-11-arm ]
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -140,7 +140,7 @@ For added convenience in workflow steps following this action:
    - Sends the OTP keystrokes and submits using `{ENTER}`.
 6. **Certificate Store Polling**: Continuously checks `Cert:\CurrentUser\My` until the certificate is loaded with an active private key link.
 7. **SignTool Discovery**: Identifies the latest `x64` Windows SDK `signtool.exe` and exports its path.
-8. **Artifact Upload**: If authentication fails (or `upload-screenshots: 'always'`), captures and logs are uploaded via `actions/upload-artifact` for instant diagnosis.
+8. **Artifact Upload**: If authentication fails (or `debug: 'true'`), captures and logs are uploaded via `actions/upload-artifact` for instant diagnosis.
 
 ---
 
@@ -153,8 +153,8 @@ When running in GitHub Actions, GUI automation runs in the interactive desktop s
 3. Inspect `oob1.png` - `oob4.png` (OOBE phase) and `008.png` - `015.png` (login dialog phase) along with `ssd_out.log`, `ssd_err.log`, and `install.log`.
 
 ### ARM64 Considerations
-Certum's SimplySign Desktop virtual driver is compiled as a 64-bit (`x64`) application. On Windows 11 ARM64 runners:
-- SimplySign Desktop runs under Windows on ARM emulation.
+Certum's SimplySign Desktop virtual driver is compiled as a 64-bit (`x64`) application. On Windows 11 Arm runners (`runs-on: windows-11-arm`):
+- SimplySign Desktop runs under Windows on Arm emulation.
 - **You must use the `x64` version of `signtool.exe`**, because the ARM64 `signtool.exe` cannot load x64 CSP/KSP cryptographic mini-drivers. This action automatically selects the x64 binary for you.
 
 ---

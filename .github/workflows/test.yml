@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, windows-11-arm64 ]
+        os: [ windows-latest, windows-11-arm ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, windows-11-arm64 ]
+        os: [ windows-latest, windows-11-arm ]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
