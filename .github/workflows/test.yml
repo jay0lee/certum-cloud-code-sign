@@ -13,7 +13,21 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       runners: ${{ steps.discover.outputs.runners }}
+      have-secrets: ${{ steps.check-secrets.outputs.have-secrets }}
     steps:
+      - name: Check Secrets Availability
+        id: check-secrets
+        shell: bash
+        env:
+          CERTUM_USERNAME: ${{ secrets.CERTUM_USERNAME }}
+          CERTUM_TOTP_SECRET: ${{ secrets.CERTUM_TOTP_SECRET }}
+        run: |
+          if [ -n "$CERTUM_USERNAME" ] && [ -n "$CERTUM_TOTP_SECRET" ]; then
+            echo "have-secrets=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have-secrets=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Query GitHub API for Supported Windows Runners
         id: discover
         shell: bash
@@ -103,7 +117,7 @@ jobs:
     name: End-to-End Auth Test (${{ matrix.os }})
     needs: [ discover-windows-runners, unit-tests, test-install ]
     runs-on: ${{ matrix.os }}
-    if: ${{ secrets.CERTUM_USERNAME != '' && secrets.CERTUM_TOTP_SECRET != '' }}
+    if: needs.discover-windows-runners.outputs.have-secrets == 'true'
     strategy:
       fail-fast: false
       matrix:
