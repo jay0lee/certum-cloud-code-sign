@@ -13,7 +13,7 @@ param()
 
 $ErrorActionPreference = 'Stop'
 
-$timeoutSeconds = if ($env:INPUT_TIMEOUT) { [int]$env:INPUT_TIMEOUT } else { 60 }
+$timeoutSeconds = if ($env:INPUT_TIMEOUT) { [int]$env:INPUT_TIMEOUT } else { 90 }
 $targetSha1 = if ($env:INPUT_CERT_SHA1) { $env:INPUT_CERT_SHA1.Replace(' ', '').Trim().ToUpper() } else { '' }
 $screenshotsDir = if ($env:INPUT_SCREENSHOTS_DIR) { $env:INPUT_SCREENSHOTS_DIR } else { (Join-Path $env:RUNNER_TEMP "certum-screenshots") }
 $isDebug = ($env:INPUT_DEBUG -eq 'true')
@@ -68,8 +68,6 @@ while (([DateTime]::UtcNow - $startTime).TotalSeconds -lt $timeoutSeconds) {
 }
 
 if (-not $foundCert) {
-    Write-Error "No matching certificate was found in Cert:\CurrentUser\My within $timeoutSeconds seconds."
-    
     Write-Host "`n--- Current Certificates in Cert:\CurrentUser\My ---"
     if ($allCerts.Count -eq 0) {
         Write-Host "Store is empty."
@@ -102,6 +100,7 @@ if (-not $foundCert) {
         Get-Content $installLog -Tail 30 | ForEach-Object { Write-Host $_ }
     }
 
+    Write-Error "No matching certificate was found in Cert:\CurrentUser\My within $timeoutSeconds seconds."
     exit 1
 }
 

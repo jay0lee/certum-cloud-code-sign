@@ -182,9 +182,9 @@ function getOpenWindows() {
 async function cleanupDesktop() {
   console.log('Cleaning up desktop (closing rogue dialogs, shells, and Start menu)...');
 
-  // 1. Terminate WSL console prompt if running
+  // 1. Terminate Windows Terminal and WSL console prompt if running
   try {
-    execPowerShell('Get-Process -Name wsl -ErrorAction SilentlyContinue | Stop-Process -Force');
+    execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force');
   } catch (e) {}
 
   // 2. Terminate System Properties (paging file error dialog) or Windows Error Reporting if open
@@ -192,11 +192,16 @@ async function cleanupDesktop() {
     execPowerShell('Get-Process -Name SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force');
   } catch (e) {}
 
-  // 3. In case any modal dialog has focus with an OK button, send ENTER
+  // 3. Close any window matching WSL or Windows Terminal or System Properties
+  try {
+    execPowerShell(`Get-Process | Where-Object { $_.MainWindowTitle -like "*wsl*" -or $_.MainWindowTitle -like "*Windows Terminal*" -or $_.MainWindowTitle -like "*System Properties*" } | Stop-Process -Force -ErrorAction SilentlyContinue`);
+  } catch (e) {}
+
+  // 4. In case any modal dialog has focus with an OK button, send ENTER
   sendKeys('{ENTER}');
   await sleep(300);
 
-  // 4. Send ESC twice to dismiss Start Menu or open context menus
+  // 5. Send ESC twice to dismiss Start Menu or open context menus
   sendKeys('{ESC}');
   await sleep(300);
   sendKeys('{ESC}');
@@ -385,17 +390,44 @@ async function run() {
 
   // 6. Submit login dialog
   console.log('Submitting login credentials...');
+  // Ensure SimplySign Desktop has focus before submitting
+  activateWindow('SimplySign Desktop');
+  activateWindow('SimplySign');
+  await sleep(300);
   sendKeys('{ENTER}');
 
-  // 7. Post-submit screenshot cascade for debug tracing
+  // 7. Post-submit screenshot cascade every 2 seconds
+  console.log('Monitoring SimplySign Desktop post-login progress...');
+  const maxPostWait = 15; // 15 checks * 2s = 30 seconds
+  let loginClosed = false;
+
+  for (let i = 1; i <= maxPostWait; i++) {
+    await sleep(2000);
+    const snapNum = String(11 + i).padStart(3, '0');
+    await takeScreenshot(`${snapNum}.png`);
+
+    // If rogue terminal or popup attempts to appear, kill it immediately
+    try {
+      execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl, SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force');
+    } catch (e) {}
+
+    const wins = getOpenWindows();
+    const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
+    
+    if (!ssdWin || !ssdWin.MainWindowTitle) {
+      console.log(`SimplySign Desktop window has closed (authenticated) after ~${i * 2}s.`);
+      loginClosed = true;
+      break;
+    } else {
+      if (DEBUG) console.log(`[DEBUG] (${i}/${maxPostWait}) SimplySign window still visible: "${ssdWin.MainWindowTitle}"`);
+      // Keep SimplySign Desktop activated in case another app tried to steal focus
+      activateWindow('SimplySign Desktop');
+      activateWindow('SimplySign');
+    }
+  }
+
   if (DEBUG) {
-    await takeScreenshot('012.png');
-    await sleep(500);
-    await takeScreenshot('013.png');
-    await sleep(500);
-    await takeScreenshot('014.png');
-    await sleep(1000);
-    await takeScreenshot('015.png');
+    await takeScreenshot('login_finished.png');
   }
 
   console.log('SimplySign Desktop authentication sequence completed successfully.');
