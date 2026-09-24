@@ -1,6 +1,6 @@
 # Certum Cloud Code Signing GitHub Action
 
-[![CI Test Suite](https://github.com/GAM-team/certum-cloud-code-sign/actions/workflows/test.yml/badge.svg)](https://github.com/GAM-team/certum-cloud-code-sign/actions/workflows/test.yml)
+[![CI Test Suite](https://github.com/jay0lee/certum-cloud-code-sign/actions/workflows/test.yml/badge.svg)](https://github.com/jay0lee/certum-cloud-code-sign/actions/workflows/test.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 A GitHub Action that installs, authenticates, and configures **Certum SimplySign Desktop** for "Code Signing in the Cloud" certificates on **Windows x86_64** and **Windows ARM64** GitHub runners.
@@ -55,7 +55,7 @@ jobs:
 
       - name: Setup Certum Code Signing
         id: certum
-        uses: GAM-team/certum-cloud-code-sign@v1
+        uses: jay0lee/certum-cloud-code-sign@v1
         with:
           username: ${{ secrets.CERTUM_USERNAME }}
           totp-secret: ${{ secrets.CERTUM_TOTP_SECRET }}

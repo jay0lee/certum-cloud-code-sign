@@ -1,6 +1,6 @@
 name: 'Certum Cloud Code Signing'
 description: 'Install, authenticate, and configure Certum SimplySign Desktop for Cloud Code Signing on Windows x86_64 and ARM64 runners.'
-author: 'GAM-team'
+author: 'jay0lee'
 branding:
   icon: 'shield'
   color: 'blue'
