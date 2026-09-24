@@ -171,18 +171,33 @@ function activateWindow(title) {
 
           [DllImport("user32.dll")]
           public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+          [DllImport("user32.dll", CharSet = CharSet.Auto)]
+          public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
         }
 "@ -ErrorAction SilentlyContinue
 
-      $p = Get-Process | Where-Object { ($_.MainWindowTitle -like "*${title.replace(/'/g, "''")}*" -or $_.ProcessName -like "*${title.replace(/'/g, "''")}*") -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+      $safeTitle = '${title.replace(/'/g, "''")}'
+      $hWnd = [IntPtr]::Zero
+      $p = Get-Process | Where-Object { ($_.MainWindowTitle -like "*$safeTitle*" -or $_.ProcessName -like "*$safeTitle*") -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
       if ($p) {
-        [Win32Win]::ShowWindow($p.MainWindowHandle, 9) | Out-Null
-        [Win32Win]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+        $hWnd = $p.MainWindowHandle
+      } else {
+        $hWnd = [Win32Win]::FindWindow($null, $safeTitle)
+      }
+
+      if ($hWnd -ne [IntPtr]::Zero) {
+        [Win32Win]::ShowWindow($hWnd, 9) | Out-Null
+        [Win32Win]::SetForegroundWindow($hWnd) | Out-Null
         $wshell = New-Object -ComObject wscript.shell
-        $wshell.AppActivate($p.Id) | Out-Null
+        if ($p) {
+          $wshell.AppActivate($p.Id) | Out-Null
+        } else {
+          $wshell.AppActivate($safeTitle) | Out-Null
+        }
       } else {
         $wshell = New-Object -ComObject wscript.shell
-        $wshell.AppActivate('${title.replace(/'/g, "''")}') | Out-Null
+        $wshell.AppActivate($safeTitle) | Out-Null
       }
     `;
     execPowerShell(ps);
@@ -210,9 +225,23 @@ async function cleanupDesktop() {
   }
 
   console.log('Dismissing popups/dialogs on ARM64 via desktop interactions...');
-  // Send ESC to dismiss any active popup, Start Menu, or terminal prompt
-  sendKeys('{ESC}');
+
+  // 1. Dismiss System Properties (paging file warning) dialog by activating and sending ENTER to click [OK]
+  activateWindow('System Properties');
   await sleep(300);
+  sendKeys('{ENTER}');
+  await sleep(300);
+
+  // 2. Dismiss WSL update prompt / Windows Terminal by activating and sending ESC to cancel prompt, then Alt+F4 to close
+  activateWindow('wsl');
+  activateWindow('Windows Terminal');
+  await sleep(300);
+  sendKeys('{ESC}');
+  await sleep(200);
+  sendKeys('%{F4}');
+  await sleep(300);
+
+  // 3. Send ESC to dismiss Start Menu or open context menus if open
   sendKeys('{ESC}');
   await sleep(300);
 
@@ -300,46 +329,36 @@ async function run() {
     }
     sendKeys('{ENTER}');
     console.log('OOBE: Clicked Next (dismissed OOBE)');
-
     await sleep(2000);
-    await takeScreenshot('002_start_menu.png');
 
-    // Dismiss Start Menu that opens automatically upon OOBE dismissal
-    sendKeys('{ESC}');
-    console.log('Dismissed Start Menu');
-
-    await sleep(1500);
-    await takeScreenshot('003_wsl_prompt.png');
-
-    // Dismiss WSL prompt that opens behind Start Menu ("Press ESC or CTRL-C to cancel")
-    sendKeys('{ESC}');
-    console.log('Dismissed WSL prompt');
-
-    await sleep(1500);
-    await takeScreenshot('004_desktop_clean.png');
-    console.log('ARM64 desktop dismissal sequence completed.');
+    // Dismiss initial popups (Start Menu, System Properties dialog, WSL update prompt)
+    await cleanupDesktop();
+    await sleep(1000);
   }
 
   // 2. Clear desktop and launch SimplySign Desktop
   minimizeAllWindows();
   await sleep(1000);
+  await takeScreenshot('002_desktop_clean.png');
 
   // First launch starts the background daemon
   launchSSD();
   await sleep(3000);
-  await takeScreenshot('008.png');
+  await takeScreenshot('003_ssd_daemon.png');
 
   // Second launch forces the login window to appear
   launchSSD();
   await sleep(3000);
-  await takeScreenshot('009.png');
+  await takeScreenshot('004_ssd_login.png');
 
   // Ensure SimplySign Desktop window is active and in foreground
+  let ssdDetected = false;
   for (let attempt = 0; attempt < 5; attempt++) {
     const wins = getOpenWindows();
     const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
     if (ssdWin && ssdWin.MainWindowTitle) {
       console.log(`SimplySign Desktop window detected: "${ssdWin.MainWindowTitle}"`);
+      ssdDetected = true;
       break;
     }
     console.log(`SimplySign window not yet in foreground (attempt ${attempt + 1}/5). Cleaning popups and re-launching...`);
@@ -348,16 +367,20 @@ async function run() {
     await sleep(3000);
   }
 
+  if (!ssdDetected) {
+    throw new Error('SimplySign Desktop login window failed to appear.');
+  }
+
   // Activate the application window
   activateWindow('SimplySign Desktop');
   activateWindow('SimplySign');
-  await sleep(1000);
+  await sleep(500);
 
   // 3. Enter Username
   console.log('Entering username into SimplySign Desktop...');
   sendText(username);
   await sleep(500);
-  await takeScreenshot('010.png');
+  await takeScreenshot('005_username.png');
 
   // 4. Tab to OTP Field
   console.log('Tabbing to OTP field...');
@@ -387,7 +410,7 @@ async function run() {
   // Enter the OTP into the active input field
   sendText(otp);
   await sleep(500);
-  await takeScreenshot('011.png');
+  await takeScreenshot('006_otp.png');
 
   // 6. Submit login dialog
   console.log('Submitting login credentials...');
@@ -396,6 +419,7 @@ async function run() {
   activateWindow('SimplySign');
   await sleep(500);
   sendKeys('{ENTER}');
+  await takeScreenshot('007_submitted.png');
 
   // 7. Post-submit screenshot cascade every 2 seconds
   console.log('Monitoring SimplySign Desktop post-login progress...');
@@ -404,7 +428,7 @@ async function run() {
 
   for (let i = 1; i <= maxPostWait; i++) {
     await sleep(2000);
-    const snapNum = String(11 + i).padStart(3, '0');
+    const snapNum = String(7 + i).padStart(3, '0');
     await takeScreenshot(`${snapNum}.png`);
 
     const wins = getOpenWindows();
@@ -427,6 +451,10 @@ async function run() {
         sendKeys('{ENTER}');
       }
     }
+  }
+
+  if (!loginClosed) {
+    throw new Error('SimplySign Desktop window did not close within 30 seconds after submitting credentials.');
   }
 
   if (DEBUG) {
