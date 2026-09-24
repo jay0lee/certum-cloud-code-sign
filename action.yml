@@ -49,7 +49,7 @@ inputs:
     required: false
     default: 'false'
   screenshots-dir:
-    description: 'Directory path where debug screenshots and logs are stored'
+    description: 'Directory path where debug screenshots and logs are stored. Defaults to $env:RUNNER_TEMP\certum-screenshots (e.g. D:\a\_temp\certum-screenshots on GitHub runners).'
     required: false
     default: ''
 
@@ -79,22 +79,46 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    - name: Validate Runner OS
+    - name: Validate Environment and Required Inputs
       shell: pwsh
       run: |
+        # 1. Validate operating system
         if ($env:RUNNER_OS -ne 'Windows') {
           Write-Error "certum-cloud-code-sign is designed specifically for Windows runners (x64 and ARM64). Current OS: $env:RUNNER_OS"
           exit 1
         }
-        Write-Host "Running on Windows ($env:RUNNER_ARCH)"
+        Write-Host "Runner OS confirmed: Windows ($env:RUNNER_ARCH)"
+
+        # 2. Fail fast if required parameters are missing
+        $missing = @()
+        if ([string]::IsNullOrWhiteSpace($env:INPUT_USERNAME)) {
+          $missing += "'username'"
+        }
+        if ([string]::IsNullOrWhiteSpace($env:INPUT_TOTP_SECRET)) {
+          $missing += "'totp-secret'"
+        }
+
+        if ($missing.Count -gt 0) {
+          $missingList = $missing -join " and "
+          Write-Error "Missing required input(s): $missingList. Please specify $missingList in your workflow's 'with:' block."
+          exit 1
+        }
+        Write-Host "All required inputs ('username', 'totp-secret') are present."
+      env:
+        INPUT_USERNAME: ${{ inputs.username }}
+        INPUT_TOTP_SECRET: ${{ inputs.totp-secret }}
 
     - name: Prepare Directories
       id: dirs
       shell: pwsh
       run: |
         $sDir = $env:INPUT_SCREENSHOTS_DIR
-        if (-not $sDir) {
-          $sDir = Join-Path $env:RUNNER_TEMP "certum-screenshots"
+        if ([string]::IsNullOrWhiteSpace($sDir)) {
+          $baseTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
+          $sDir = Join-Path $baseTemp "certum-screenshots"
+          Write-Host "No custom screenshots-dir specified. Defaulting to runner temp directory: $sDir"
+        } else {
+          Write-Host "Using custom screenshots-dir: $sDir"
         }
         New-Item -ItemType Directory -Force -Path $sDir | Out-Null
         Add-Content -Path $env:GITHUB_OUTPUT -Value "screenshots-dir=$sDir"

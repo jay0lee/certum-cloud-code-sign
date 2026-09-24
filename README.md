@@ -89,8 +89,17 @@ jobs:
 | `totp-period` | Time interval in seconds for TOTP code expiration | No | `30` |
 | `cert-sha1` | Expected certificate SHA-1 thumbprint (if empty, auto-detects) | No | `""` |
 | `wait-for-cert-timeout` | Maximum seconds to wait for certificate to appear in store | No | `60` |
-| `debug` | Enable saving and archiving desktop screenshots and diagnostic logs for troubleshooting | No | `false` |
-| `screenshots-dir` | Directory to store diagnostic screenshots | No | `${{ runner.temp }}/certum-screenshots` |
+| `screenshots-dir` | Directory path where debug screenshots and logs are stored | No | `$env:RUNNER_TEMP\certum-screenshots` |
+
+### Parameter Defaults & Fail-Fast Behavior
+
+- **Fail-Fast Validation**: The action validates in its very first step that both `username` and `totp-secret` are non-empty and that the runner OS is Windows. If either is missing, the action halts execution immediately with an error before attempting to download or install SimplySign Desktop.
+- **`screenshots-dir` Default**:
+  - If omitted or left empty, `screenshots-dir` defaults to:
+    **`$env:RUNNER_TEMP\certum-screenshots`**
+  - On GitHub-hosted Windows runners, `$env:RUNNER_TEMP` resolves to `D:\a\_temp` (or `C:\Users\runneradmin\AppData\Local\Temp`). Therefore, screenshots are placed in `D:\a\_temp\certum-screenshots`.
+  - Placing diagnostic images in `RUNNER_TEMP` ensures they never clutter your repository workspace (`GITHUB_WORKSPACE`) and are automatically purged after the workflow finishes.
+  - The resolved path is always exposed as the action output `screenshots-path` (`${{ steps.certum.outputs.screenshots-path }}`).
 
 ---
 
