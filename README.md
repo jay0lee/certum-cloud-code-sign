@@ -35,8 +35,8 @@ Store your Certum credentials as GitHub Secrets in your repository (**Settings >
 > [!IMPORTANT]
 > GitHub Secret names **only allow alphanumeric characters (`[A-Za-z0-9]`) and underscores (`_`)**. Hyphens/dashes (`-`) are not permitted by GitHub.
 
-1. `CERTUM_USERNAME` (or `USERNAME`): Your Certum SimplySign account email / username (e.g., `developer@example.com`).
-2. `CERTUM_TOTP_SECRET` (or `TOTP_SECRET`): Your Base32 TOTP secret key provided by Certum during SimplySign activation.
+1. `CERTUM_USERNAME`: Your Certum SimplySign account email / username (e.g., `developer@example.com`).
+2. `CERTUM_TOTP_SECRET`: Your Base32 TOTP secret key provided by Certum during SimplySign activation.
 
 ### Basic Example
 
