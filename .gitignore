@@ -15,6 +15,9 @@ node_modules/
 .DS_Store
 Thumbs.db
 
+# Test verification repo
+test-verification-repo/
+
 # Temp files
 *.tmp
 *.msi
