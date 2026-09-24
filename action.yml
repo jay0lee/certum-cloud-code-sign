@@ -104,6 +104,9 @@ outputs:
   screenshots-path:
     description: 'Directory path where screenshots and logs were stored'
     value: ${{ steps.dirs.outputs.screenshots-dir }}
+  teardown-script:
+    description: 'Path to teardown script to disconnect and terminate SimplySign Desktop session'
+    value: ${{ github.action_path }}/scripts/teardown.ps1
 
 runs:
   using: 'composite'

@@ -96,8 +96,13 @@ export function generateTOTP(secret, options = {}) {
   const counterBuf = Buffer.alloc(8);
   counterBuf.writeBigUInt64BE(BigInt(counter));
 
-  // Compute HMAC
-  const hmac = crypto.createHmac(nodeAlgo, key).update(counterBuf).digest();
+  // Compute HMAC with in-memory key zeroing
+  let hmac;
+  try {
+    hmac = crypto.createHmac(nodeAlgo, key).update(counterBuf).digest();
+  } finally {
+    key.fill(0);
+  }
 
   // Dynamic truncation (RFC 4226 / RFC 6238)
   const offset = hmac[hmac.length - 1] & 0x0f;

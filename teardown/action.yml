@@ -1,0 +1,21 @@
+name: 'Certum Cloud Code Signing Teardown'
+description: 'Gracefully log out, terminate SimplySign Desktop session, and remove cloud certificates from certificate store.'
+author: 'jay0lee'
+branding:
+  icon: 'shield-off'
+  color: 'gray'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Terminate SimplySign Desktop Session
+      shell: pwsh
+      run: |
+        $scriptPath = Join-Path $env:GITHUB_ACTION_PATH "..\scripts\teardown.ps1"
+        if (-not (Test-Path $scriptPath)) {
+          $scriptPath = Join-Path (Split-Path -Parent $env:GITHUB_ACTION_PATH) "scripts\teardown.ps1"
+        }
+        if (-not (Test-Path $scriptPath)) {
+          $scriptPath = "${{ github.action_path }}/../scripts/teardown.ps1"
+        }
+        & $scriptPath

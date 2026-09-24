@@ -15,10 +15,12 @@ A GitHub Action that installs, authenticates, and configures **Certum SimplySign
   - Focuses the SimplySign Desktop OTP input field *first*.
   - Checks remaining validity in the current 30-second window; if fewer than 5 seconds remain, it pauses until a fresh cycle begins.
   - Generates the RFC 6238 HMAC-SHA256 OTP at the absolute last millisecond before typing, guaranteeing maximum validity window during network submission.
-- **Strict Zero-Log Privacy**: Neither the TOTP secret nor the generated one-time password is **ever** printed, logged, or exposed in console outputs or error traces.
-- **Zero External Dependencies**: Pure Node.js implementation (`npm install` is not required on the runner).
+- **Strict Zero-Log Privacy & Dynamic Secret Masking**: Neither the TOTP secret nor the generated one-time password is **ever** printed, logged, or exposed in console outputs or error traces. Sensitive values are dynamically registered with the GitHub Actions secret masking engine (`::add-mask::`).
+- **Cryptographic Memory Zeroing**: Sensitive Base32 decoded key buffers are securely wiped from memory (`key.fill(0)`) in `finally` blocks immediately following HMAC computation.
+- **Session Teardown**: Provides an automated teardown companion action (`jay0lee/certum-cloud-code-sign/teardown@v1`) to terminate SimplySign Desktop and unmount cloud certificates after signing.
+- **Zero External Dependencies**: Pure Node.js implementation with zero npm or PowerShell dependencies (`npm install` is not required on the runner).
 - **GUI Desktop Automation**: Launches SimplySign Desktop and simulates keyboard input with proper character escaping.
-- **Debug Flag & Image Archiving**: Includes a `debug: true` flag that enables capturing and archiving desktop screenshots throughout the login flow as an artifact for instant visual troubleshooting. On any login failure, emergency desktop images are always archived.
+- **Debug Flag & Image Archiving**: Includes an optional `debug: true` flag that enables capturing and archiving desktop screenshots throughout the login flow as an artifact for instant visual troubleshooting.
 - **Certificate Verification & SignTool Discovery**:
   - Polls `Cert:\CurrentUser\My` until the code signing certificate with its cryptographic private key is loaded.
   - Automatically locates the correct **x64 `signtool.exe`** on both x64 and ARM64 runners (ARM64 `signtool.exe` cannot interface with SimplySign's 64-bit mini-driver).
@@ -38,12 +40,94 @@ Store your Certum credentials as GitHub Secrets in your repository (**Settings >
 1. `CERTUM_USERNAME`: Your Certum SimplySign account email / username (e.g., `developer@example.com`).
 2. `CERTUM_TOTP_SECRET`: Your Base32 TOTP secret key provided by Certum during SimplySign activation.
 
-### Basic Example
+### Recommended Production Architecture (Job-Level Isolation)
+
+For defense-in-depth security in production pipelines, follow the **job isolation pattern**:
+1. **`build` job**: Compiles and packages your binary with **zero secrets** and minimal token permissions. Build dependencies or third-party build scripts cannot access your signing credentials.
+2. **`sign` job**: Runs only after `build` succeeds. Downloads the unsigned binary artifact, authenticates SimplySign Desktop with commit-SHA pinned action, signs and verifies the binary, and always executes the teardown action.
+
+```yaml
+name: Build, Sign, and Release
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Unsigned Binaries
+    runs-on: windows-2022
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Compile your executable with ZERO secrets exposed to compilers or build tools
+      - name: Compile Executable
+        run: go build -o dist/myapp.exe .
+
+      - name: Upload Unsigned Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-myapp
+          path: dist/myapp.exe
+
+  sign:
+    name: Sign Binaries with Certum Cloud
+    needs: build
+    runs-on: windows-2022
+    # Optional: Require manual approval by scoping to a protected GitHub Environment
+    # environment: production-signing
+    steps:
+      - name: Download Unsigned Binary Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: unsigned-myapp
+          path: dist
+
+      - name: Setup Certum Cloud Code Signing
+        id: certum
+        # Best Practice: Pin to a full 40-character commit SHA for immutable supply chain security
+        uses: jay0lee/certum-cloud-code-sign@v1
+        with:
+          username: ${{ secrets.CERTUM_USERNAME }}
+          totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+
+      - name: Sign Executable
+        shell: pwsh
+        run: |
+          signtool sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} `
+            /tr http://time.certum.pl /td SHA256 /fd SHA256 /v `
+            dist/myapp.exe
+
+      - name: Verify Signature
+        shell: pwsh
+        run: |
+          signtool verify /pa /v dist/myapp.exe
+
+      # Cleanly terminate SimplySign Desktop and unmount certificates post-signing
+      - name: Teardown SimplySign Desktop Session
+        if: always()
+        uses: jay0lee/certum-cloud-code-sign/teardown@v1
+
+      - name: Upload Signed Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: myapp-windows-x64
+          path: dist/myapp.exe
+```
+
+### Basic Single-Job Example
 
 ```yaml
 name: Build and Sign Windows Executables
 
 on: [push, pull_request]
+
+permissions:
+  contents: read
 
 jobs:
   build-and-sign:
@@ -75,6 +159,10 @@ jobs:
         shell: pwsh
         run: |
           signtool verify /pa /v dist/myapp.exe
+
+      - name: Teardown SimplySign Desktop Session
+        if: always()
+        uses: jay0lee/certum-cloud-code-sign/teardown@v1
 ```
 
 ---
@@ -119,6 +207,7 @@ jobs:
 | `cert-count` | Total number of certificates present in `Cert:\CurrentUser\My` |
 | `signtool-path` | Discovered full path to the `x64` `signtool.exe` |
 | `screenshots-path` | Directory containing captured diagnostic screenshots and logs |
+| `teardown-script` | Path to the PowerShell session teardown script (`scripts/teardown.ps1`) |
 
 ---
 
@@ -161,6 +250,48 @@ When running in GitHub Actions, GUI automation runs in the interactive desktop s
 Certum's SimplySign Desktop virtual driver is compiled as a 64-bit (`x64`) application. On Windows 11 Arm runners (`runs-on: windows-11-arm`):
 - SimplySign Desktop runs under Windows on Arm emulation.
 - **You must use the `x64` version of `signtool.exe`**, because the ARM64 `signtool.exe` cannot load x64 CSP/KSP cryptographic mini-drivers. This action automatically selects the x64 binary for you.
+
+---
+
+## Security & Supply Chain Hardening
+
+For sensitive code signing operations in production environments, adopting defense-in-depth principles is strongly recommended:
+
+### 1. Pin to Immutable Commit SHAs
+Tags like `@v1` can theoretically be re-pointed. For strict supply chain integrity, pin your workflow steps to a full 40-character commit SHA:
+```yaml
+- name: Setup Certum Code Signing
+  uses: jay0lee/certum-cloud-code-sign@<full-commit-sha>
+  with:
+    username: ${{ secrets.CERTUM_USERNAME }}
+    totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+
+- name: Teardown SimplySign Desktop Session
+  if: always()
+  uses: jay0lee/certum-cloud-code-sign/teardown@<full-commit-sha>
+```
+With `.github/dependabot.yml` configured in your repository, Dependabot will automatically propose pull requests to update pinned SHAs when new releases are published.
+
+### 2. Job-Level Isolation
+Compilers, npm/pip/go modules, and build scripts run untrusted third-party code. To prevent malicious dependencies from accessing your signing credentials:
+- **Build job**: Compiles binaries and runs tests with **zero secrets** configured.
+- **Sign job**: Runs independently, downloads the build artifact, authenticates SimplySign Desktop, signs, and executes teardown.
+
+### 3. Post-Execution Session Teardown
+Always run the teardown action with `if: always()` after signing:
+```yaml
+- name: Teardown SimplySign Desktop Session
+  if: always()
+  uses: jay0lee/certum-cloud-code-sign/teardown@v1
+```
+This terminates SimplySign Desktop, clears active Smart Card sessions, and verifies that the cloud certificates are unmounted from `Cert:\CurrentUser\My`.
+
+### 4. GitHub Environments & Required Approvals
+Store `CERTUM_USERNAME` and `CERTUM_TOTP_SECRET` within a dedicated **GitHub Environment** (e.g. `production-signing`).
+- Configure **Required Reviewers** so signing jobs require human authorization.
+- Limit access strictly to protected branches (e.g. `main` or release tags).
+
+See [.github/SECURITY.md](.github/SECURITY.md) for full details on security architecture and vulnerability reporting.
 
 ---
 

@@ -39,6 +39,11 @@ if (!totpSecret) {
   process.exit(1);
 }
 
+// Register GitHub Actions secret masks immediately to ensure credentials
+// can never leak into console logs or runner diagnostics
+console.log(`::add-mask::${username}`);
+console.log(`::add-mask::${totpSecret}`);
+
 // Ensure screenshots directory exists if debug is enabled
 if (DEBUG) {
   try {
@@ -111,7 +116,13 @@ function generateTOTP(secret, options = {}) {
   const counterBuf = Buffer.alloc(8);
   counterBuf.writeBigUInt64BE(BigInt(counter));
 
-  const hmac = crypto.createHmac(nodeAlgo, key).update(counterBuf).digest();
+  let hmac;
+  try {
+    hmac = crypto.createHmac(nodeAlgo, key).update(counterBuf).digest();
+  } finally {
+    key.fill(0);
+  }
+
   const offset = hmac[hmac.length - 1] & 0x0f;
   const binary = (hmac.readUInt32BE(offset) & 0x7fffffff);
   const code = binary % (10 ** digits);
@@ -384,6 +395,7 @@ async function run() {
     digits: totpDigits,
     period: totpPeriod
   });
+  console.log(`::add-mask::${otp}`);
   console.log('Fresh TOTP token generated.');
 
   // Activate the SimplySign Desktop application window

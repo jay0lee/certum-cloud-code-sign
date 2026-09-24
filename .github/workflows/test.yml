@@ -7,6 +7,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   discover-windows-runners:
     name: Discover Windows Runners
@@ -142,3 +145,7 @@ jobs:
           Write-Host "Issuer     : ${{ steps.certum.outputs.cert-issuer }}"
           Write-Host "Expiration : ${{ steps.certum.outputs.cert-expiration }}"
           Write-Host "SignTool   : ${{ steps.certum.outputs.signtool-path }}"
+
+      - name: Teardown SimplySign Desktop Session
+        if: always()
+        uses: ./teardown
