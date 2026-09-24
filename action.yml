@@ -44,18 +44,14 @@ inputs:
     description: 'Maximum seconds to wait for certificates to appear in Windows certificate store after login'
     required: false
     default: '60'
-  upload-screenshots:
-    description: 'When to upload screenshots and logs artifact (always, on-failure, never)'
+  debug:
+    description: 'Enable saving and archiving desktop screenshots and diagnostic logs for troubleshooting'
     required: false
-    default: 'on-failure'
+    default: 'false'
   screenshots-dir:
     description: 'Directory path where debug screenshots and logs are stored'
     required: false
     default: ''
-  debug:
-    description: 'Enable verbose debug logging'
-    required: false
-    default: 'false'
 
 outputs:
   cert-thumbprint:
@@ -141,8 +137,8 @@ runs:
         INPUT_SCREENSHOTS_DIR: ${{ steps.dirs.outputs.screenshots-dir }}
         INPUT_DEBUG: ${{ inputs.debug }}
 
-    - name: Upload Debug Artifacts
-      if: always() && ((failure() && inputs.upload-screenshots == 'on-failure') || inputs.upload-screenshots == 'always')
+    - name: Archive Desktop Screenshots and Logs
+      if: always() && (inputs.debug == 'true' || failure())
       uses: actions/upload-artifact@v4
       with:
         name: certum-debug-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}

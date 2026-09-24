@@ -11,13 +11,18 @@ A GitHub Action that installs, authenticates, and configures **Certum SimplySign
 
 - **Cross-Architecture Support**: Runs seamlessly on both `x86_64` (e.g. `windows-2022`, `windows-2025`, `windows-latest`) and `ARM64` (e.g. `windows-11-arm64`) GitHub Actions runners.
 - **Automated OOBE Screen Dismissal**: Automatically handles Windows ARM64 GitHub runner quirks where the VM begins with an interactive Out-Of-Box Experience (OOBE) privacy settings screen, tabbing through and dismissing it so GUI automation can proceed.
-- **Built-in RFC 6238 TOTP Engine**: Computes HMAC-SHA256 one-time passwords directly in pure Node.js with **zero external npm dependencies** (`npm install` is not required).
-- **GUI Desktop Automation**: Launches SimplySign Desktop and simulates keyboard input to enter credentials and the time-based OTP directly into the application window.
+- **Last-Second TOTP Generation & Expiry Protection**:
+  - Focuses the SimplySign Desktop OTP input field *first*.
+  - Checks remaining validity in the current 30-second window; if fewer than 5 seconds remain, it pauses until a fresh cycle begins.
+  - Generates the RFC 6238 HMAC-SHA256 OTP at the absolute last millisecond before typing, guaranteeing maximum validity window during network submission.
+- **Strict Zero-Log Privacy**: Neither the TOTP secret nor the generated one-time password is **ever** printed, logged, or exposed in console outputs or error traces.
+- **Zero External Dependencies**: Pure Node.js implementation (`npm install` is not required on the runner).
+- **GUI Desktop Automation**: Launches SimplySign Desktop and simulates keyboard input with proper character escaping.
+- **Debug Flag & Image Archiving**: Includes a `debug: true` flag that enables capturing and archiving desktop screenshots throughout the login flow as an artifact for instant visual troubleshooting. On any login failure, emergency desktop images are always archived.
 - **Certificate Verification & SignTool Discovery**:
   - Polls `Cert:\CurrentUser\My` until the code signing certificate with its cryptographic private key is loaded.
   - Automatically locates the correct **x64 `signtool.exe`** on both x64 and ARM64 runners (ARM64 `signtool.exe` cannot interface with SimplySign's 64-bit mini-driver).
   - Adds `signtool` to `GITHUB_PATH` so subsequent workflow steps can call `signtool` directly.
-- **Diagnostic Screenshots & Logs**: Captures desktop screenshots before, during, and after each interaction step (stored in an artifact on failure or on demand) for straightforward CI debugging.
 
 ---
 
@@ -84,9 +89,8 @@ jobs:
 | `totp-period` | Time interval in seconds for TOTP code expiration | No | `30` |
 | `cert-sha1` | Expected certificate SHA-1 thumbprint (if empty, auto-detects) | No | `""` |
 | `wait-for-cert-timeout` | Maximum seconds to wait for certificate to appear in store | No | `60` |
-| `upload-screenshots` | When to upload screenshots and logs artifact (`always`, `on-failure`, `never`) | No | `on-failure` |
+| `debug` | Enable saving and archiving desktop screenshots and diagnostic logs for troubleshooting | No | `false` |
 | `screenshots-dir` | Directory to store diagnostic screenshots | No | `${{ runner.temp }}/certum-screenshots` |
-| `debug` | Enable verbose diagnostic logging | No | `false` |
 
 ---
 

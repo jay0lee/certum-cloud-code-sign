@@ -106,23 +106,3 @@ export function generateTOTP(secret, options = {}) {
 
   return code.toString().padStart(digits, '0');
 }
-
-// CLI usage: node totp.mjs <secret> [algorithm] [digits] [period]
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const secret = process.argv[2];
-  if (!secret) {
-    console.error('Usage: node totp.mjs <base32-secret> [algorithm] [digits] [period]');
-    process.exit(1);
-  }
-  const algorithm = process.argv[3] || 'SHA-256';
-  const digits = parseInt(process.argv[4] || '6', 10);
-  const period = parseInt(process.argv[5] || '30', 10);
-
-  try {
-    const otp = generateTOTP(secret, { algorithm, digits, period });
-    console.log(otp);
-  } catch (err) {
-    console.error('Error generating TOTP:', err.message);
-    process.exit(1);
-  }
-}
