@@ -7,6 +7,7 @@ ssd_err.log
 # Diagnostic screenshots
 *.png
 certum-screenshots/
+debug-artifacts-*/
 
 # Dependencies
 node_modules/

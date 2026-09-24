@@ -121,9 +121,4 @@ if (-not (Test-Path $appPath)) {
 }
 
 Write-Host "SimplySign Desktop installed and verified at: $appPath"
-
-# Pre-launch SimplySign Desktop background daemon
-Write-Host "Pre-launching SimplySign Desktop background process..."
-Start-Process -FilePath $appPath -ErrorAction SilentlyContinue
-
 exit 0

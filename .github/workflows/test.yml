@@ -8,13 +8,56 @@ on:
   workflow_dispatch:
 
 jobs:
+  discover-windows-runners:
+    name: Discover Windows Runners
+    runs-on: ubuntu-latest
+    outputs:
+      runners: ${{ steps.discover.outputs.runners }}
+    steps:
+      - name: Query GitHub API for Supported Windows Runners
+        id: discover
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          echo "Calling GitHub API for actions/runner-images..."
+          AUTH_HEADER=""
+          if [ -n "$GH_TOKEN" ]; then
+            AUTH_HEADER="Authorization: Bearer $GH_TOKEN"
+          fi
+
+          CONTENT=$(curl -sSL -H "User-Agent: GitHub-Actions-Runner-Discovery" ${AUTH_HEADER:+-H "$AUTH_HEADER"} "https://api.github.com/repos/actions/runner-images/readme" | jq -r .content | base64 -d 2>/dev/null || true)
+
+          if [ -n "$CONTENT" ]; then
+            # Extract canonical runner labels from the Windows table rows:
+            # - Matches lines starting with '| Windows' and excludes deprecated images
+            # - Extracts labels enclosed in backticks
+            # - Excludes aliases like '-latest' and specific visual studio variants like '-vs[0-9]+'
+            RUNNERS=$(echo "$CONTENT" | \
+              awk -F'|' '/^\| Windows/ && !/deprecated/ {print $4}' | \
+              grep -o '`windows-[^`]*`' | tr -d '`' | \
+              grep -v '\-latest' | grep -v '\-vs[0-9]*' | sort -u | \
+              jq -R -s -c 'split("\n") | map(select(length > 0))')
+          fi
+
+          # Fallback if API was unreachable or rate-limited
+          if [ -z "$RUNNERS" ] || [ "$RUNNERS" = "[]" ] || [ "$RUNNERS" = "null" ]; then
+            echo "API discovery returned empty or failed, using canonical fallback list"
+            RUNNERS='["windows-11-arm","windows-2022","windows-2025"]'
+          fi
+
+          echo "Discovered Windows runner matrix: $RUNNERS"
+          echo "runners=$RUNNERS" >> "$GITHUB_OUTPUT"
+
   unit-tests:
     name: Unit Tests (${{ matrix.os }})
+    needs: discover-windows-runners
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-latest, macos-latest, windows-latest ]
+        os: ${{ fromJson(needs.discover-windows-runners.outputs.runners) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -29,11 +72,12 @@ jobs:
 
   test-install:
     name: Test SimplySign Desktop Installer (${{ matrix.os }})
+    needs: discover-windows-runners
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, windows-11-arm ]
+        os: ${{ fromJson(needs.discover-windows-runners.outputs.runners) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -57,15 +101,13 @@ jobs:
 
   e2e-auth-test:
     name: End-to-End Auth Test (${{ matrix.os }})
-    needs: [ unit-tests, test-install ]
+    needs: [ discover-windows-runners, unit-tests, test-install ]
     runs-on: ${{ matrix.os }}
-    if: ${{ env.HAVE_SECRETS == 'true' }}
-    env:
-      HAVE_SECRETS: ${{ secrets.CERTUM_USERNAME != '' && secrets.CERTUM_TOTP_SECRET != '' }}
+    if: ${{ secrets.CERTUM_USERNAME != '' && secrets.CERTUM_TOTP_SECRET != '' }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ windows-latest, windows-11-arm ]
+        os: ${{ fromJson(needs.discover-windows-runners.outputs.runners) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
