@@ -154,6 +154,10 @@ runs:
         New-Item -ItemType Directory -Force -Path $sDir | Out-Null
         Add-Content -Path $env:GITHUB_OUTPUT -Value "screenshots-dir=$sDir"
         Add-Content -Path $env:GITHUB_ENV -Value "CERTUM_SCREENSHOTS_DIR=$sDir"
+
+        $osTag = if ($env:ImageOS) { $env:ImageOS } else { "$($env:RUNNER_OS)-$($env:RUNNER_ARCH)" }
+        $artName = "certum-debug-$osTag-$($env:RUNNER_ARCH)-$($env:GITHUB_RUN_ID)"
+        Add-Content -Path $env:GITHUB_OUTPUT -Value "artifact-name=$artName"
       env:
         INPUT_SCREENSHOTS_DIR: ${{ inputs.screenshots_dir || inputs.screenshots-dir }}
 
@@ -196,9 +200,10 @@ runs:
       if: always() && (inputs.debug == 'true' || failure())
       uses: actions/upload-artifact@v4
       with:
-        name: certum-debug-${{ runner.os }}-${{ runner.arch }}-${{ github.run_id }}
+        name: ${{ steps.dirs.outputs.artifact-name || format('certum-debug-{0}-{1}-{2}', runner.os, runner.arch, github.run_id) }}
         path: |
           ${{ steps.dirs.outputs.screenshots-dir }}/*.png
           ${{ steps.dirs.outputs.screenshots-dir }}/*.log
           ${{ runner.temp }}/install.log
         if-no-files-found: ignore
+        overwrite: true

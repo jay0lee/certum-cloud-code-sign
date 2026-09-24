@@ -160,7 +160,31 @@ function minimizeAllWindows() {
 
 function activateWindow(title) {
   try {
-    const ps = `$wshell = New-Object -ComObject wscript.shell; $wshell.AppActivate('${title.replace(/'/g, "''")}')`;
+    const ps = `
+      Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class Win32Win {
+          [DllImport("user32.dll")]
+          [return: MarshalAs(UnmanagedType.Bool)]
+          public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+          [DllImport("user32.dll")]
+          public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+        }
+"@ -ErrorAction SilentlyContinue
+
+      $p = Get-Process | Where-Object { ($_.MainWindowTitle -like "*${title.replace(/'/g, "''")}*" -or $_.ProcessName -like "*${title.replace(/'/g, "''")}*") -and $_.MainWindowHandle -ne 0 } | Select-Object -First 1
+      if ($p) {
+        [Win32Win]::ShowWindow($p.MainWindowHandle, 9) | Out-Null
+        [Win32Win]::SetForegroundWindow($p.MainWindowHandle) | Out-Null
+        $wshell = New-Object -ComObject wscript.shell
+        $wshell.AppActivate($p.Id) | Out-Null
+      } else {
+        $wshell = New-Object -ComObject wscript.shell
+        $wshell.AppActivate('${title.replace(/'/g, "''")}') | Out-Null
+      }
+    `;
     execPowerShell(ps);
   } catch (err) {
     // Ignore activation notice
@@ -180,35 +204,36 @@ function getOpenWindows() {
 }
 
 async function cleanupDesktop() {
-  console.log('Cleaning up desktop (closing rogue dialogs, shells, and Start menu)...');
+  const runnerArch = (process.env.RUNNER_ARCH || '').toUpperCase();
+  if (runnerArch !== 'ARM64') {
+    return;
+  }
 
-  // 1. Terminate Windows Terminal and WSL console prompt if running
+  console.log('Cleaning up desktop on ARM64 (closing rogue dialogs, shells, and Start menu)...');
+
+  // 1. Terminate Windows Terminal and WSL console prompt if running, and disable background tasks
   try {
-    execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force');
+    execPowerShell(`
+      Get-Process -Name WindowsTerminal, wt, wsl, SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+      Stop-Service -Name WslService -Force -ErrorAction SilentlyContinue
+      Get-ScheduledTask | Where-Object { $_.TaskName -like "*wsl*" } | Disable-ScheduledTask -ErrorAction SilentlyContinue
+    `);
   } catch (e) {}
 
-  // 2. Terminate System Properties (paging file error dialog) or Windows Error Reporting if open
-  try {
-    execPowerShell('Get-Process -Name SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force');
-  } catch (e) {}
-
-  // 3. Close any window matching WSL or Windows Terminal or System Properties
+  // 2. Close any window matching WSL or Windows Terminal or System Properties
   try {
     execPowerShell(`Get-Process | Where-Object { $_.MainWindowTitle -like "*wsl*" -or $_.MainWindowTitle -like "*Windows Terminal*" -or $_.MainWindowTitle -like "*System Properties*" } | Stop-Process -Force -ErrorAction SilentlyContinue`);
   } catch (e) {}
 
-  const runnerArch = (process.env.RUNNER_ARCH || '').toUpperCase();
-  if (runnerArch === 'ARM64') {
-    // In case any modal dialog has focus with an OK button on ARM64, send ENTER
-    sendKeys('{ENTER}');
-    await sleep(300);
+  // In case any modal dialog has focus with an OK button on ARM64, send ENTER
+  sendKeys('{ENTER}');
+  await sleep(300);
 
-    // Send ESC twice to dismiss Start Menu or open context menus
-    sendKeys('{ESC}');
-    await sleep(300);
-    sendKeys('{ESC}');
-    await sleep(500);
-  }
+  // Send ESC twice to dismiss Start Menu or open context menus
+  sendKeys('{ESC}');
+  await sleep(300);
+  sendKeys('{ESC}');
+  await sleep(500);
 
   if (DEBUG) {
     const wins = getOpenWindows();
@@ -396,9 +421,14 @@ async function run() {
   // 6. Submit login dialog
   console.log('Submitting login credentials...');
   // Ensure SimplySign Desktop has focus before submitting
+  if (runnerArch === 'ARM64') {
+    try {
+      execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
+    } catch (e) {}
+  }
   activateWindow('SimplySign Desktop');
   activateWindow('SimplySign');
-  await sleep(300);
+  await sleep(500);
   sendKeys('{ENTER}');
 
   // 7. Post-submit screenshot cascade every 2 seconds
@@ -411,10 +441,12 @@ async function run() {
     const snapNum = String(11 + i).padStart(3, '0');
     await takeScreenshot(`${snapNum}.png`);
 
-    // If rogue terminal or popup attempts to appear, kill it immediately
-    try {
-      execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl, SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force');
-    } catch (e) {}
+    // If rogue terminal attempts to appear on ARM64, kill it immediately
+    if (runnerArch === 'ARM64') {
+      try {
+        execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
+      } catch (e) {}
+    }
 
     const wins = getOpenWindows();
     const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
@@ -428,6 +460,13 @@ async function run() {
       // Keep SimplySign Desktop activated in case another app tried to steal focus
       activateWindow('SimplySign Desktop');
       activateWindow('SimplySign');
+
+      // On ARM64, if the window remains open after 4s (i == 2) or 8s (i == 4), re-send ENTER
+      // in case the initial keystroke was lost to a momentary popup
+      if (runnerArch === 'ARM64' && (i === 2 || i === 4)) {
+        console.log(`SimplySign window still visible after ${i * 2}s on ARM64. Re-submitting ENTER...`);
+        sendKeys('{ENTER}');
+      }
     }
   }
 
