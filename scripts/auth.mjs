@@ -232,19 +232,10 @@ async function cleanupDesktop() {
   sendKeys('{ENTER}');
   await sleep(200);
 
-  // 2. Dismiss WSL update prompt / Windows Terminal by activating and sending ESC to cancel prompt, then Alt+F4 to close
+  // 2. Dismiss WSL update prompt if open by sending ESC to cancel prompt
   activateWindow('wsl');
   await sleep(200);
   sendKeys('{ESC}');
-  await sleep(100);
-  sendKeys('%{F4}');
-  await sleep(200);
-
-  activateWindow('WindowsTerminal');
-  activateWindow('wt');
-  activateWindow('Windows Terminal');
-  await sleep(200);
-  sendKeys('%{F4}');
   await sleep(200);
 
   // 3. Send ESC to dismiss Start Menu or open context menus if open
@@ -394,11 +385,6 @@ async function run() {
     period: totpPeriod
   });
   console.log('Fresh TOTP token generated.');
-
-  // Clean any rogue terminal or popup that might have opened while SSD initialized
-  if (runnerArch === 'ARM64') {
-    await cleanupDesktop();
-  }
 
   // Activate the SimplySign Desktop application window
   activateWindow('SimplySign Desktop');
