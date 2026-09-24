@@ -197,15 +197,18 @@ async function cleanupDesktop() {
     execPowerShell(`Get-Process | Where-Object { $_.MainWindowTitle -like "*wsl*" -or $_.MainWindowTitle -like "*Windows Terminal*" -or $_.MainWindowTitle -like "*System Properties*" } | Stop-Process -Force -ErrorAction SilentlyContinue`);
   } catch (e) {}
 
-  // 4. In case any modal dialog has focus with an OK button, send ENTER
-  sendKeys('{ENTER}');
-  await sleep(300);
+  const runnerArch = (process.env.RUNNER_ARCH || '').toUpperCase();
+  if (runnerArch === 'ARM64') {
+    // In case any modal dialog has focus with an OK button on ARM64, send ENTER
+    sendKeys('{ENTER}');
+    await sleep(300);
 
-  // 5. Send ESC twice to dismiss Start Menu or open context menus
-  sendKeys('{ESC}');
-  await sleep(300);
-  sendKeys('{ESC}');
-  await sleep(500);
+    // Send ESC twice to dismiss Start Menu or open context menus
+    sendKeys('{ESC}');
+    await sleep(300);
+    sendKeys('{ESC}');
+    await sleep(500);
+  }
 
   if (DEBUG) {
     const wins = getOpenWindows();
@@ -315,9 +318,11 @@ async function run() {
     console.log('OOBE dismissal sequence completed.');
   }
 
-  // 2. Clean up desktop (WSL prompt, paging file dialog, Start Menu)
-  await cleanupDesktop();
-  await takeScreenshot('desktop_clean.png');
+  // 2. Clean up desktop (WSL prompt, paging file dialog, Start Menu) on ARM64
+  if (runnerArch === 'ARM64') {
+    await cleanupDesktop();
+    await takeScreenshot('desktop_clean.png');
+  }
 
   // 3. Clear desktop and launch SimplySign Desktop
   minimizeAllWindows();
