@@ -1,0 +1,88 @@
+name: CI Test Suite
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, macos-latest, windows-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run Unit Tests
+        run: npm test
+
+  test-install:
+    name: Test SimplySign Desktop Installer (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, windows-11-arm64 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Installer Script
+        shell: pwsh
+        run: |
+          & ./scripts/install.ps1
+        env:
+          INPUT_VERSION: '9.4.4.92'
+
+      - name: Verify SimplySign Desktop Binary
+        shell: pwsh
+        run: |
+          $path = 'C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe'
+          if (-not (Test-Path $path)) {
+            Write-Error "SimplySign Desktop executable was not found at $path"
+            exit 1
+          }
+          Write-Host "Binary verified at $path"
+
+  e2e-auth-test:
+    name: End-to-End Auth Test (${{ matrix.os }})
+    needs: [ unit-tests, test-install ]
+    runs-on: ${{ matrix.os }}
+    if: ${{ env.HAVE_SECRETS == 'true' }}
+    env:
+      HAVE_SECRETS: ${{ secrets.CERTUM_USERNAME != '' && secrets.CERTUM_TOTP_SECRET != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ windows-latest, windows-11-arm64 ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Certum Action
+        id: certum
+        uses: ./
+        with:
+          username: ${{ secrets.CERTUM_USERNAME }}
+          totp-secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+          debug: 'true'
+
+      - name: Display Certificate Outputs
+        shell: pwsh
+        run: |
+          Write-Host "Thumbprint : ${{ steps.certum.outputs.cert-thumbprint }}"
+          Write-Host "Subject    : ${{ steps.certum.outputs.cert-subject }}"
+          Write-Host "Issuer     : ${{ steps.certum.outputs.cert-issuer }}"
+          Write-Host "Expiration : ${{ steps.certum.outputs.cert-expiration }}"
+          Write-Host "SignTool   : ${{ steps.certum.outputs.signtool-path }}"

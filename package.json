@@ -1,0 +1,22 @@
+{
+  "name": "certum-cloud-code-sign",
+  "version": "1.0.0",
+  "description": "GitHub Action to install, authenticate, and configure Certum SimplySign Desktop for Cloud Code Signing on Windows x64 and ARM64 runners",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/totp.test.mjs && node tests/sendkeys.test.mjs"
+  },
+  "keywords": [
+    "github-action",
+    "certum",
+    "simplysign",
+    "codesign",
+    "code-signing",
+    "windows",
+    "arm64",
+    "signtool",
+    "totp"
+  ],
+  "author": "GAM-team",
+  "license": "Apache-2.0"
+}

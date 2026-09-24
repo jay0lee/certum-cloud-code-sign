@@ -1,0 +1,20 @@
+# Logs
+*.log
+install.log
+ssd_out.log
+ssd_err.log
+
+# Diagnostic screenshots
+*.png
+certum-screenshots/
+
+# Dependencies
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temp files
+*.tmp
+*.msi
