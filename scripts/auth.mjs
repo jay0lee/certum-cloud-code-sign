@@ -243,13 +243,25 @@ async function cleanupDesktop() {
   sendKeys('{ENTER}');
   await sleep(200);
 
-  // 2. Dismiss WSL update prompt if open by sending ESC to cancel prompt
+  // 2. Dismiss WSL update prompt if open by activating and sending ^c and %{F4}
   activateWindow('wsl');
   await sleep(200);
-  sendKeys('{ESC}');
+  sendKeys('^c');
+  await sleep(200);
+  sendKeys('%{F4}');
   await sleep(200);
 
-  // 3. Send ESC to dismiss Start Menu or open context menus if open
+  // 3. Gracefully close any console host or wsl window that opened
+  try {
+    const ps = `
+      Get-Process | Where-Object { $_.ProcessName -in @('wsl', 'WindowsTerminal') -and $_.MainWindowHandle -ne 0 } | ForEach-Object {
+        $_.CloseMainWindow() | Out-Null
+      }
+    `;
+    execPowerShell(ps);
+  } catch (e) {}
+
+  // 4. Send ESC to dismiss Start Menu or open context menus if open
   sendKeys('{ESC}');
   await sleep(200);
 
@@ -379,86 +391,101 @@ async function run() {
     throw new Error('SimplySign Desktop login window failed to appear.');
   }
 
-  // 3. Prepare TOTP token BEFORE interacting with the input fields
-  // Check remaining time in the current TOTP period.
-  // If fewer than 8 seconds remain, wait for the fresh period so we have
-  // at least 22+ seconds of token validity.
-  const now = Math.floor(Date.now() / 1000);
-  const remainingSeconds = totpPeriod - (now % totpPeriod);
-  if (remainingSeconds < 8) {
-    console.log(`Current TOTP window expires in ${remainingSeconds}s. Waiting for fresh period...`);
-    await sleep((remainingSeconds + 1) * 1000);
-  }
-
-  const otp = generateTOTP(totpSecret, {
-    algorithm: totpAlgorithm,
-    digits: totpDigits,
-    period: totpPeriod
-  });
-  console.log(`::add-mask::${otp}`);
-  console.log('Fresh TOTP token generated.');
-
-  // Activate the SimplySign Desktop application window
-  activateWindow('SimplySign Desktop');
-  activateWindow('SimplySign');
-  await sleep(500);
-
-  // 4. Enter Username
-  console.log('Entering username into SimplySign Desktop...');
-  sendText(username);
-  await sleep(200);
-  await takeScreenshot('005_username.png');
-
-  // 5. Tab to OTP Field and enter OTP immediately
-  console.log('Tabbing to OTP field and entering token...');
-  sendKeys('{TAB}');
-  await sleep(200);
-  sendText(otp);
-  await sleep(200);
-  await takeScreenshot('006_otp.png');
-
-  // 6. Submit login dialog
-  console.log('Submitting login credentials...');
-  activateWindow('SimplySign Desktop');
-  activateWindow('SimplySign');
-  await sleep(300);
-  sendKeys('{ENTER}');
-  await takeScreenshot('007_submitted.png');
-
-  // 7. Post-submit screenshot cascade every 2 seconds
-  console.log('Monitoring SimplySign Desktop post-login progress...');
-  const maxPostWait = 15; // 15 checks * 2s = 30 seconds
+  // 3. Enter credentials and authenticate SimplySign Desktop
+  const maxAuthAttempts = 2;
   let loginClosed = false;
 
-  for (let i = 1; i <= maxPostWait; i++) {
-    await sleep(2000);
-    const snapNum = String(7 + i).padStart(3, '0');
-    await takeScreenshot(`${snapNum}.png`);
-
-    const wins = getOpenWindows();
-    const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
-    
-    if (!ssdWin || !ssdWin.MainWindowTitle) {
-      console.log(`SimplySign Desktop window has closed (authenticated) after ~${i * 2}s.`);
-      loginClosed = true;
-      break;
-    } else {
-      if (DEBUG) console.log(`[DEBUG] (${i}/${maxPostWait}) SimplySign window still visible: "${ssdWin.MainWindowTitle}"`);
-      // Keep SimplySign Desktop activated in case another app tried to steal focus
+  for (let authAttempt = 1; authAttempt <= maxAuthAttempts; authAttempt++) {
+    if (authAttempt > 1) {
+      console.log(`\nRetrying authentication (attempt ${authAttempt}/${maxAuthAttempts})...`);
+      // Dismiss any open error message dialog ("Invalid user name or token") with ENTER / ESC
       activateWindow('SimplySign Desktop');
       activateWindow('SimplySign');
+      await sleep(300);
+      sendKeys('{ENTER}');
+      await sleep(500);
+      sendKeys('{ESC}');
+      await sleep(1000);
+    }
 
-      // If the window remains open after 4s (i == 2) or 8s (i == 4), re-send ENTER
-      // in case the initial keystroke was lost
-      if (i === 2 || i === 4) {
-        console.log(`SimplySign window still visible after ${i * 2}s. Re-submitting ENTER...`);
-        sendKeys('{ENTER}');
+    // Check remaining time in the current TOTP period.
+    // Ensure at least 15 seconds of token validity remain so the token never expires during network transit.
+    const now = Math.floor(Date.now() / 1000);
+    const remainingSeconds = totpPeriod - (now % totpPeriod);
+    if (remainingSeconds < 15) {
+      console.log(`Current TOTP window expires in ${remainingSeconds}s. Waiting for fresh period...`);
+      await sleep((remainingSeconds + 1) * 1000);
+    }
+
+    const otp = generateTOTP(totpSecret, {
+      algorithm: totpAlgorithm,
+      digits: totpDigits,
+      period: totpPeriod
+    });
+    console.log(`::add-mask::${otp}`);
+    console.log(`Fresh TOTP token generated (attempt ${authAttempt}).`);
+
+    // Activate the SimplySign Desktop application window
+    activateWindow('SimplySign Desktop');
+    activateWindow('SimplySign');
+    await sleep(500);
+
+    // 4. Enter Username (using Ctrl+A to safely replace any previous content)
+    console.log('Entering username into SimplySign Desktop...');
+    sendKeys('^a');
+    await sleep(100);
+    sendText(username);
+    await sleep(200);
+    if (DEBUG) await takeScreenshot(`005_username_att${authAttempt}.png`);
+
+    // 5. Tab to OTP Field and enter OTP immediately
+    console.log('Tabbing to OTP field and entering token...');
+    sendKeys('{TAB}');
+    await sleep(200);
+    sendKeys('^a');
+    await sleep(100);
+    sendText(otp);
+    await sleep(200);
+    if (DEBUG) await takeScreenshot(`006_otp_att${authAttempt}.png`);
+
+    // 6. Submit login dialog
+    console.log('Submitting login credentials...');
+    activateWindow('SimplySign Desktop');
+    activateWindow('SimplySign');
+    await sleep(300);
+    sendKeys('{ENTER}');
+    if (DEBUG) await takeScreenshot(`007_submitted_att${authAttempt}.png`);
+
+    // 7. Post-submit monitoring: check every 2 seconds for up to 20 seconds (10 checks)
+    console.log('Monitoring SimplySign Desktop post-login progress...');
+    const maxPostWait = 10;
+
+    for (let i = 1; i <= maxPostWait; i++) {
+      await sleep(2000);
+      if (DEBUG) {
+        const snapNum = String(7 + (authAttempt - 1) * 10 + i).padStart(3, '0');
+        await takeScreenshot(`${snapNum}.png`);
       }
+
+      const wins = getOpenWindows();
+      const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
+
+      if (!ssdWin || !ssdWin.MainWindowTitle) {
+        console.log(`SimplySign Desktop window has closed (authenticated) after ~${i * 2}s.`);
+        loginClosed = true;
+        break;
+      } else {
+        if (DEBUG) console.log(`[DEBUG] (${i}/${maxPostWait}) SimplySign window still visible: "${ssdWin.MainWindowTitle}"`);
+      }
+    }
+
+    if (loginClosed) {
+      break;
     }
   }
 
   if (!loginClosed) {
-    throw new Error('SimplySign Desktop window did not close within 30 seconds after submitting credentials.');
+    throw new Error('SimplySign Desktop window did not close after submitting credentials.');
   }
 
   if (DEBUG) {
