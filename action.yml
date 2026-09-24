@@ -151,7 +151,9 @@ runs:
         } else {
           Write-Host "Using custom screenshots_dir: $sDir"
         }
-        New-Item -ItemType Directory -Force -Path $sDir | Out-Null
+        if ($env:INPUT_DEBUG -eq 'true') {
+          New-Item -ItemType Directory -Force -Path $sDir | Out-Null
+        }
         Add-Content -Path $env:GITHUB_OUTPUT -Value "screenshots-dir=$sDir"
         Add-Content -Path $env:GITHUB_ENV -Value "CERTUM_SCREENSHOTS_DIR=$sDir"
 
@@ -160,6 +162,7 @@ runs:
         Add-Content -Path $env:GITHUB_OUTPUT -Value "artifact-name=$artName"
       env:
         INPUT_SCREENSHOTS_DIR: ${{ inputs.screenshots_dir || inputs.screenshots-dir }}
+        INPUT_DEBUG: ${{ inputs.debug }}
 
     - name: Download and Install SimplySign Desktop
       shell: pwsh
@@ -197,7 +200,7 @@ runs:
         INPUT_DEBUG: ${{ inputs.debug }}
 
     - name: Archive Desktop Screenshots and Logs
-      if: always() && (inputs.debug == 'true' || failure())
+      if: always() && inputs.debug == 'true'
       uses: actions/upload-artifact@v4
       with:
         name: ${{ steps.dirs.outputs.artifact-name || format('certum-debug-{0}-{1}-{2}', runner.os, runner.arch, github.run_id) }}

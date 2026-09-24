@@ -209,31 +209,12 @@ async function cleanupDesktop() {
     return;
   }
 
-  console.log('Cleaning up desktop on ARM64 (closing rogue dialogs, shells, and Start menu)...');
-
-  // 1. Terminate Windows Terminal and WSL console prompt if running, and disable background tasks
-  try {
-    execPowerShell(`
-      Get-Process -Name WindowsTerminal, wt, wsl, SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-      Stop-Service -Name WslService -Force -ErrorAction SilentlyContinue
-      Get-ScheduledTask | Where-Object { $_.TaskName -like "*wsl*" } | Disable-ScheduledTask -ErrorAction SilentlyContinue
-    `);
-  } catch (e) {}
-
-  // 2. Close any window matching WSL or Windows Terminal or System Properties
-  try {
-    execPowerShell(`Get-Process | Where-Object { $_.MainWindowTitle -like "*wsl*" -or $_.MainWindowTitle -like "*Windows Terminal*" -or $_.MainWindowTitle -like "*System Properties*" } | Stop-Process -Force -ErrorAction SilentlyContinue`);
-  } catch (e) {}
-
-  // In case any modal dialog has focus with an OK button on ARM64, send ENTER
-  sendKeys('{ENTER}');
-  await sleep(300);
-
-  // Send ESC twice to dismiss Start Menu or open context menus
+  console.log('Dismissing popups/dialogs on ARM64 via desktop interactions...');
+  // Send ESC to dismiss any active popup, Start Menu, or terminal prompt
   sendKeys('{ESC}');
   await sleep(300);
   sendKeys('{ESC}');
-  await sleep(500);
+  await sleep(300);
 
   if (DEBUG) {
     const wins = getOpenWindows();
@@ -306,50 +287,40 @@ async function run() {
   console.log(`Runner Architecture: ${runnerArch}`);
   console.log(`Debug Mode: ${DEBUG ? 'Enabled (saving diagnostic screenshots)' : 'Disabled'}`);
 
-  // 1. Handle Windows ARM64 GitHub runner OOBE quirks
+  // 1. Handle Windows ARM64 GitHub runner OOBE and initial popups via desktop interactions
   if (runnerArch === 'ARM64') {
     console.log('Running on Windows ARM64 runner. Dismissing OOBE setup screen...');
     await sleep(3000);
-    await takeScreenshot('oob1.png');
+    await takeScreenshot('001_oob.png');
 
-    // Page 1: Tab to Next button
+    // Dismiss OOBE: Tab 7 times to "Next" button and press Enter
     for (let i = 0; i < 7; i++) {
       sendKeys('{TAB}');
       await sleep(200);
     }
     sendKeys('{ENTER}');
-    console.log('OOBE: Clicked Next');
-
-    await sleep(3000);
-    await takeScreenshot('oob2.png');
-
-    // Page 2: Tab to Accept button
-    for (let i = 0; i < 7; i++) {
-      sendKeys('{TAB}');
-      await sleep(200);
-    }
-    sendKeys('{ENTER}');
-    console.log('OOBE: Clicked Accept');
-
-    await sleep(3000);
-    await takeScreenshot('oob3.png');
-
-    // Dismiss Start Menu if opened
-    sendKeys('{ESC}');
-    console.log('OOBE: Dismissed Start Menu');
+    console.log('OOBE: Clicked Next (dismissed OOBE)');
 
     await sleep(2000);
-    await takeScreenshot('oob4.png');
-    console.log('OOBE dismissal sequence completed.');
+    await takeScreenshot('002_start_menu.png');
+
+    // Dismiss Start Menu that opens automatically upon OOBE dismissal
+    sendKeys('{ESC}');
+    console.log('Dismissed Start Menu');
+
+    await sleep(1500);
+    await takeScreenshot('003_wsl_prompt.png');
+
+    // Dismiss WSL prompt that opens behind Start Menu ("Press ESC or CTRL-C to cancel")
+    sendKeys('{ESC}');
+    console.log('Dismissed WSL prompt');
+
+    await sleep(1500);
+    await takeScreenshot('004_desktop_clean.png');
+    console.log('ARM64 desktop dismissal sequence completed.');
   }
 
-  // 2. Clean up desktop (WSL prompt, paging file dialog, Start Menu) on ARM64
-  if (runnerArch === 'ARM64') {
-    await cleanupDesktop();
-    await takeScreenshot('desktop_clean.png');
-  }
-
-  // 3. Clear desktop and launch SimplySign Desktop
+  // 2. Clear desktop and launch SimplySign Desktop
   minimizeAllWindows();
   await sleep(1000);
 
@@ -421,11 +392,6 @@ async function run() {
   // 6. Submit login dialog
   console.log('Submitting login credentials...');
   // Ensure SimplySign Desktop has focus before submitting
-  if (runnerArch === 'ARM64') {
-    try {
-      execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
-    } catch (e) {}
-  }
   activateWindow('SimplySign Desktop');
   activateWindow('SimplySign');
   await sleep(500);
@@ -441,13 +407,6 @@ async function run() {
     const snapNum = String(11 + i).padStart(3, '0');
     await takeScreenshot(`${snapNum}.png`);
 
-    // If rogue terminal attempts to appear on ARM64, kill it immediately
-    if (runnerArch === 'ARM64') {
-      try {
-        execPowerShell('Get-Process -Name WindowsTerminal, wt, wsl -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue');
-      } catch (e) {}
-    }
-
     const wins = getOpenWindows();
     const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
     
@@ -461,10 +420,10 @@ async function run() {
       activateWindow('SimplySign Desktop');
       activateWindow('SimplySign');
 
-      // On ARM64, if the window remains open after 4s (i == 2) or 8s (i == 4), re-send ENTER
-      // in case the initial keystroke was lost to a momentary popup
-      if (runnerArch === 'ARM64' && (i === 2 || i === 4)) {
-        console.log(`SimplySign window still visible after ${i * 2}s on ARM64. Re-submitting ENTER...`);
+      // If the window remains open after 4s (i == 2) or 8s (i == 4), re-send ENTER
+      // in case the initial keystroke was lost
+      if (i === 2 || i === 4) {
+        console.log(`SimplySign window still visible after ${i * 2}s. Re-submitting ENTER...`);
         sendKeys('{ENTER}');
       }
     }
@@ -479,28 +438,13 @@ async function run() {
 
 run().catch(async (err) => {
   console.error('Error during SimplySign Desktop authentication:', err.message);
-  // On failure, always attempt to capture an emergency desktop screenshot
-  try {
-    fs.mkdirSync(screenshotsDir, { recursive: true });
-    const fullPath = path.join(screenshotsDir, 'failure-desktop.png');
-    const safePath = fullPath.replace(/\\/g, '/');
-    const psScript = `
-      Add-Type -AssemblyName System.Windows.Forms;
-      Add-Type -AssemblyName System.Drawing;
-      $Screen = [System.Windows.Forms.SystemInformation]::VirtualScreen;
-      if ($Screen.Width -gt 0 -and $Screen.Height -gt 0) {
-          $bitmap = New-Object System.Drawing.Bitmap $Screen.Width, $Screen.Height;
-          $graphic = [System.Drawing.Graphics]::FromImage($bitmap);
-          $graphic.CopyFromScreen($Screen.Left, $Screen.Top, 0, 0, $bitmap.Size);
-          $bitmap.Save('${safePath}', [System.Drawing.Imaging.ImageFormat]::Png);
-          $graphic.Dispose();
-          $bitmap.Dispose();
-      }
-    `;
-    execPowerShell(psScript);
-    console.log('Saved failure desktop image to failure-desktop.png');
-  } catch (e) {
-    // Ignore error
+  // Only capture failure screenshot if debug is explicitly enabled
+  if (DEBUG) {
+    try {
+      await takeScreenshot('failure-desktop.png');
+    } catch (e) {
+      // Ignore error
+    }
   }
   process.exit(1);
 });
