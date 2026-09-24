@@ -9,9 +9,14 @@ inputs:
   username:
     description: 'Certum SimplySign account email / username'
     required: true
-  totp-secret:
+  totp_secret:
     description: 'Certum TOTP secret key (Base32 format) for generating one-time passwords'
-    required: true
+    required: false
+    default: ''
+  totp-secret:
+    description: 'Alias for totp_secret'
+    required: false
+    default: ''
   version:
     description: 'SimplySign Desktop version to download and install'
     required: false
@@ -24,32 +29,56 @@ inputs:
     description: 'Path to SimplySign Desktop executable'
     required: false
     default: 'C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe'
-  totp-algorithm:
+  totp_algorithm:
     description: 'Hashing algorithm for TOTP (Certum uses SHA-256)'
     required: false
     default: 'SHA-256'
-  totp-digits:
+  totp-algorithm:
+    description: 'Alias for totp_algorithm'
+    required: false
+    default: ''
+  totp_digits:
     description: 'Number of digits in TOTP token'
     required: false
     default: '6'
-  totp-period:
+  totp-digits:
+    description: 'Alias for totp_digits'
+    required: false
+    default: ''
+  totp_period:
     description: 'TOTP refresh period in seconds'
     required: false
     default: '30'
-  cert-sha1:
+  totp-period:
+    description: 'Alias for totp_period'
+    required: false
+    default: ''
+  cert_sha1:
     description: 'Expected SHA-1 thumbprint of the certificate. If omitted, auto-discovers code signing certificate.'
     required: false
     default: ''
-  wait-for-cert-timeout:
+  cert-sha1:
+    description: 'Alias for cert_sha1'
+    required: false
+    default: ''
+  wait_for_cert_timeout:
     description: 'Maximum seconds to wait for certificates to appear in Windows certificate store after login'
     required: false
     default: '60'
+  wait-for-cert-timeout:
+    description: 'Alias for wait_for_cert_timeout'
+    required: false
+    default: ''
   debug:
     description: 'Enable saving and archiving desktop screenshots and diagnostic logs for troubleshooting'
     required: false
     default: 'false'
-  screenshots-dir:
+  screenshots_dir:
     description: 'Directory path where debug screenshots and logs are stored. Defaults to $env:RUNNER_TEMP\certum-screenshots (e.g. D:\a\_temp\certum-screenshots on GitHub runners).'
+    required: false
+    default: ''
+  screenshots-dir:
+    description: 'Alias for screenshots_dir'
     required: false
     default: ''
 
@@ -94,8 +123,9 @@ runs:
         if ([string]::IsNullOrWhiteSpace($env:INPUT_USERNAME)) {
           $missing += "'username'"
         }
-        if ([string]::IsNullOrWhiteSpace($env:INPUT_TOTP_SECRET)) {
-          $missing += "'totp-secret'"
+        $effectiveTotp = if ($env:INPUT_TOTP_SECRET) { $env:INPUT_TOTP_SECRET } else { $env:INPUT_TOTP_SECRET_DASH }
+        if ([string]::IsNullOrWhiteSpace($effectiveTotp)) {
+          $missing += "'totp_secret'"
         }
 
         if ($missing.Count -gt 0) {
@@ -103,10 +133,11 @@ runs:
           Write-Error "Missing required input(s): $missingList. Please specify $missingList in your workflow's 'with:' block."
           exit 1
         }
-        Write-Host "All required inputs ('username', 'totp-secret') are present."
+        Write-Host "All required inputs ('username', 'totp_secret') are present."
       env:
         INPUT_USERNAME: ${{ inputs.username }}
-        INPUT_TOTP_SECRET: ${{ inputs.totp-secret }}
+        INPUT_TOTP_SECRET: ${{ inputs.totp_secret }}
+        INPUT_TOTP_SECRET_DASH: ${{ inputs.totp-secret }}
 
     - name: Prepare Directories
       id: dirs
@@ -116,15 +147,15 @@ runs:
         if ([string]::IsNullOrWhiteSpace($sDir)) {
           $baseTemp = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { [System.IO.Path]::GetTempPath() }
           $sDir = Join-Path $baseTemp "certum-screenshots"
-          Write-Host "No custom screenshots-dir specified. Defaulting to runner temp directory: $sDir"
+          Write-Host "No custom screenshots_dir specified. Defaulting to runner temp directory: $sDir"
         } else {
-          Write-Host "Using custom screenshots-dir: $sDir"
+          Write-Host "Using custom screenshots_dir: $sDir"
         }
         New-Item -ItemType Directory -Force -Path $sDir | Out-Null
         Add-Content -Path $env:GITHUB_OUTPUT -Value "screenshots-dir=$sDir"
         Add-Content -Path $env:GITHUB_ENV -Value "CERTUM_SCREENSHOTS_DIR=$sDir"
       env:
-        INPUT_SCREENSHOTS_DIR: ${{ inputs.screenshots-dir }}
+        INPUT_SCREENSHOTS_DIR: ${{ inputs.screenshots_dir || inputs.screenshots-dir }}
 
     - name: Download and Install SimplySign Desktop
       shell: pwsh
@@ -142,11 +173,11 @@ runs:
         node "${{ github.action_path }}/scripts/auth.mjs"
       env:
         CERTUM_USERNAME: ${{ inputs.username }}
-        CERTUM_TOTP_SECRET: ${{ inputs.totp-secret }}
+        CERTUM_TOTP_SECRET: ${{ inputs.totp_secret || inputs.totp-secret }}
         CERTUM_APP_PATH: ${{ inputs.app-path }}
-        CERTUM_TOTP_ALGORITHM: ${{ inputs.totp-algorithm }}
-        CERTUM_TOTP_DIGITS: ${{ inputs.totp-digits }}
-        CERTUM_TOTP_PERIOD: ${{ inputs.totp-period }}
+        CERTUM_TOTP_ALGORITHM: ${{ inputs.totp_algorithm || inputs.totp-algorithm || 'SHA-256' }}
+        CERTUM_TOTP_DIGITS: ${{ inputs.totp_digits || inputs.totp-digits || '6' }}
+        CERTUM_TOTP_PERIOD: ${{ inputs.totp_period || inputs.totp-period || '30' }}
         CERTUM_SCREENSHOTS_DIR: ${{ steps.dirs.outputs.screenshots-dir }}
         CERTUM_DEBUG: ${{ inputs.debug }}
 
@@ -156,8 +187,8 @@ runs:
       run: |
         & "${{ github.action_path }}/scripts/verify.ps1"
       env:
-        INPUT_TIMEOUT: ${{ inputs.wait-for-cert-timeout }}
-        INPUT_CERT_SHA1: ${{ inputs.cert-sha1 }}
+        INPUT_TIMEOUT: ${{ inputs.wait_for_cert_timeout || inputs.wait-for-cert-timeout || '60' }}
+        INPUT_CERT_SHA1: ${{ inputs.cert_sha1 || inputs.cert-sha1 }}
         INPUT_SCREENSHOTS_DIR: ${{ steps.dirs.outputs.screenshots-dir }}
         INPUT_DEBUG: ${{ inputs.debug }}
 

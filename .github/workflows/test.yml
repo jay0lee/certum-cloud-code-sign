@@ -75,7 +75,7 @@ jobs:
         uses: ./
         with:
           username: ${{ secrets.CERTUM_USERNAME }}
-          totp-secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+          totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
           debug: 'true'
 
       - name: Display Certificate Outputs

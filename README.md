@@ -30,9 +30,13 @@ A GitHub Action that installs, authenticates, and configures **Certum SimplySign
 
 ### Prerequisites
 
-Store your Certum credentials as GitHub Secrets in your repository:
-1. `CERTUM_USERNAME`: Your Certum SimplySign account email / username (e.g., `developer@example.com`).
-2. `CERTUM_TOTP_SECRET`: Your Base32 TOTP secret key provided by Certum during SimplySign activation.
+Store your Certum credentials as GitHub Secrets in your repository (**Settings > Secrets and variables > Actions**):
+
+> [!IMPORTANT]
+> GitHub Secret names **only allow alphanumeric characters (`[A-Za-z0-9]`) and underscores (`_`)**. Hyphens/dashes (`-`) are not permitted by GitHub.
+
+1. `CERTUM_USERNAME` (or `USERNAME`): Your Certum SimplySign account email / username (e.g., `developer@example.com`).
+2. `CERTUM_TOTP_SECRET` (or `TOTP_SECRET`): Your Base32 TOTP secret key provided by Certum during SimplySign activation.
 
 ### Basic Example
 
@@ -58,7 +62,7 @@ jobs:
         uses: jay0lee/certum-cloud-code-sign@v1
         with:
           username: ${{ secrets.CERTUM_USERNAME }}
-          totp-secret: ${{ secrets.CERTUM_TOTP_SECRET }}
+          totp_secret: ${{ secrets.CERTUM_TOTP_SECRET }}
 
       - name: Sign Binaries
         shell: pwsh
@@ -80,22 +84,23 @@ jobs:
 | Input | Description | Required | Default |
 | :--- | :--- | :---: | :--- |
 | `username` | Certum SimplySign account email / username | **Yes** | — |
-| `totp-secret` | Base32 TOTP secret key for 2FA one-time password generation | **Yes** | — |
+| `totp_secret` | Base32 TOTP secret key for 2FA one-time password generation (alias: `totp-secret`) | **Yes** | — |
 | `version` | SimplySign Desktop version to download and install | No | `9.4.4.92` |
 | `download-url` | Custom direct download URL for SimplySign Desktop MSI | No | `https://files.certum.eu/software/SimplySignDesktop/Windows/${version}/SimplySignDesktop-${version}-64-bit-en.msi` |
 | `app-path` | Path to SimplySign Desktop executable | No | `C:\Program Files\Certum\SimplySign Desktop\SimplySignDesktop.exe` |
-| `totp-algorithm` | Hash algorithm for TOTP (`SHA-256`, `SHA-1`, `SHA-512`) | No | `SHA-256` |
-| `totp-digits` | Number of digits in generated TOTP token | No | `6` |
-| `totp-period` | Time interval in seconds for TOTP code expiration | No | `30` |
-| `cert-sha1` | Expected certificate SHA-1 thumbprint (if empty, auto-detects) | No | `""` |
-| `wait-for-cert-timeout` | Maximum seconds to wait for certificate to appear in store | No | `60` |
-| `screenshots-dir` | Directory path where debug screenshots and logs are stored | No | `$env:RUNNER_TEMP\certum-screenshots` |
+| `totp_algorithm` | Hash algorithm for TOTP (`SHA-256`, `SHA-1`, `SHA-512`) | No | `SHA-256` |
+| `totp_digits` | Number of digits in generated TOTP token | No | `6` |
+| `totp_period` | Time interval in seconds for TOTP code expiration | No | `30` |
+| `cert_sha1` | Expected certificate SHA-1 thumbprint (if empty, auto-detects) | No | `""` |
+| `wait_for_cert_timeout` | Maximum seconds to wait for certificate to appear in store | No | `60` |
+| `debug` | Enable saving and archiving desktop screenshots and diagnostic logs for troubleshooting | No | `false` |
+| `screenshots_dir` | Directory path where debug screenshots and logs are stored | No | `$env:RUNNER_TEMP\certum-screenshots` |
 
 ### Parameter Defaults & Fail-Fast Behavior
 
-- **Fail-Fast Validation**: The action validates in its very first step that both `username` and `totp-secret` are non-empty and that the runner OS is Windows. If either is missing, the action halts execution immediately with an error before attempting to download or install SimplySign Desktop.
-- **`screenshots-dir` Default**:
-  - If omitted or left empty, `screenshots-dir` defaults to:
+- **Fail-Fast Validation**: The action validates in its very first step that both `username` and `totp_secret` are non-empty and that the runner OS is Windows. If either is missing, the action halts execution immediately with an error before attempting to download or install SimplySign Desktop.
+- **`screenshots_dir` Default**:
+  - If omitted or left empty, `screenshots_dir` defaults to:
     **`$env:RUNNER_TEMP\certum-screenshots`**
   - On GitHub-hosted Windows runners, `$env:RUNNER_TEMP` resolves to `D:\a\_temp` (or `C:\Users\runneradmin\AppData\Local\Temp`). Therefore, screenshots are placed in `D:\a\_temp\certum-screenshots`.
   - Placing diagnostic images in `RUNNER_TEMP` ensures they never clutter your repository workspace (`GITHUB_WORKSPACE`) and are automatically purged after the workflow finishes.
