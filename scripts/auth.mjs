@@ -167,6 +167,47 @@ function activateWindow(title) {
   }
 }
 
+function getOpenWindows() {
+  try {
+    const ps = `Get-Process | Where-Object { $_.MainWindowTitle } | Select-Object -Property ProcessName, MainWindowTitle | ConvertTo-Json -Compress`;
+    const res = execPowerShell(ps);
+    if (!res || !res.trim()) return [];
+    const parsed = JSON.parse(res.trim());
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch (e) {
+    return [];
+  }
+}
+
+async function cleanupDesktop() {
+  console.log('Cleaning up desktop (closing rogue dialogs, shells, and Start menu)...');
+
+  // 1. Terminate WSL console prompt if running
+  try {
+    execPowerShell('Get-Process -Name wsl -ErrorAction SilentlyContinue | Stop-Process -Force');
+  } catch (e) {}
+
+  // 2. Terminate System Properties (paging file error dialog) or Windows Error Reporting if open
+  try {
+    execPowerShell('Get-Process -Name SystemProperties*, WerFault -ErrorAction SilentlyContinue | Stop-Process -Force');
+  } catch (e) {}
+
+  // 3. In case any modal dialog has focus with an OK button, send ENTER
+  sendKeys('{ENTER}');
+  await sleep(300);
+
+  // 4. Send ESC twice to dismiss Start Menu or open context menus
+  sendKeys('{ESC}');
+  await sleep(300);
+  sendKeys('{ESC}');
+  await sleep(500);
+
+  if (DEBUG) {
+    const wins = getOpenWindows();
+    console.log('[DEBUG] Open windows after cleanup:', JSON.stringify(wins));
+  }
+}
+
 async function takeScreenshot(filename) {
   // Only capture screenshots if debug mode is active
   if (!DEBUG) return;
@@ -264,12 +305,16 @@ async function run() {
     sendKeys('{ESC}');
     console.log('OOBE: Dismissed Start Menu');
 
-    await sleep(3000);
+    await sleep(2000);
     await takeScreenshot('oob4.png');
     console.log('OOBE dismissal sequence completed.');
   }
 
-  // 2. Clear desktop and launch SimplySign Desktop
+  // 2. Clean up desktop (WSL prompt, paging file dialog, Start Menu)
+  await cleanupDesktop();
+  await takeScreenshot('desktop_clean.png');
+
+  // 3. Clear desktop and launch SimplySign Desktop
   minimizeAllWindows();
   await sleep(1000);
 
@@ -282,6 +327,20 @@ async function run() {
   launchSSD();
   await sleep(3000);
   await takeScreenshot('009.png');
+
+  // Ensure SimplySign Desktop window is active and in foreground
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const wins = getOpenWindows();
+    const ssdWin = wins.find(w => (w.MainWindowTitle && w.MainWindowTitle.includes('SimplySign')) || (w.ProcessName && w.ProcessName.includes('SimplySign')));
+    if (ssdWin && ssdWin.MainWindowTitle) {
+      console.log(`SimplySign Desktop window detected: "${ssdWin.MainWindowTitle}"`);
+      break;
+    }
+    console.log(`SimplySign window not yet in foreground (attempt ${attempt + 1}/5). Cleaning popups and re-launching...`);
+    await cleanupDesktop();
+    launchSSD();
+    await sleep(3000);
+  }
 
   // Activate the application window
   activateWindow('SimplySign Desktop');
