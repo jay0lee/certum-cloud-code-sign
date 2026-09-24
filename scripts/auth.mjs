@@ -228,22 +228,28 @@ async function cleanupDesktop() {
 
   // 1. Dismiss System Properties (paging file warning) dialog by activating and sending ENTER to click [OK]
   activateWindow('System Properties');
-  await sleep(300);
+  await sleep(200);
   sendKeys('{ENTER}');
-  await sleep(300);
+  await sleep(200);
 
   // 2. Dismiss WSL update prompt / Windows Terminal by activating and sending ESC to cancel prompt, then Alt+F4 to close
   activateWindow('wsl');
-  activateWindow('Windows Terminal');
-  await sleep(300);
+  await sleep(200);
   sendKeys('{ESC}');
+  await sleep(100);
+  sendKeys('%{F4}');
+  await sleep(200);
+
+  activateWindow('WindowsTerminal');
+  activateWindow('wt');
+  activateWindow('Windows Terminal');
   await sleep(200);
   sendKeys('%{F4}');
-  await sleep(300);
+  await sleep(200);
 
   // 3. Send ESC to dismiss Start Menu or open context menus if open
   sendKeys('{ESC}');
-  await sleep(300);
+  await sleep(200);
 
   if (DEBUG) {
     const wins = getOpenWindows();
@@ -371,53 +377,53 @@ async function run() {
     throw new Error('SimplySign Desktop login window failed to appear.');
   }
 
-  // Activate the application window
-  activateWindow('SimplySign Desktop');
-  activateWindow('SimplySign');
-  await sleep(500);
-
-  // 3. Enter Username
-  console.log('Entering username into SimplySign Desktop...');
-  sendText(username);
-  await sleep(500);
-  await takeScreenshot('005_username.png');
-
-  // 4. Tab to OTP Field
-  console.log('Tabbing to OTP field...');
-  sendKeys('{TAB}');
-  await sleep(500);
-
-  // 5. Generate TOTP at the last possible second with expiry protection
-  // Check remaining time in the current TOTP period
+  // 3. Prepare TOTP token BEFORE interacting with the input fields
+  // Check remaining time in the current TOTP period.
+  // If fewer than 8 seconds remain, wait for the fresh period so we have
+  // at least 22+ seconds of token validity.
   const now = Math.floor(Date.now() / 1000);
   const remainingSeconds = totpPeriod - (now % totpPeriod);
-
-  if (remainingSeconds < 5) {
-    // If fewer than 5 seconds remain in the current period, wait for the next period
-    // so the OTP does not expire while being typed and verified by Certum cloud servers.
+  if (remainingSeconds < 8) {
     console.log(`Current TOTP window expires in ${remainingSeconds}s. Waiting for fresh period...`);
     await sleep((remainingSeconds + 1) * 1000);
   }
 
-  console.log('Generating fresh TOTP token and entering credentials...');
-  // Generate TOTP token immediately before sending keystrokes
   const otp = generateTOTP(totpSecret, {
     algorithm: totpAlgorithm,
     digits: totpDigits,
     period: totpPeriod
   });
+  console.log('Fresh TOTP token generated.');
 
-  // Enter the OTP into the active input field
-  sendText(otp);
+  // Clean any rogue terminal or popup that might have opened while SSD initialized
+  if (runnerArch === 'ARM64') {
+    await cleanupDesktop();
+  }
+
+  // Activate the SimplySign Desktop application window
+  activateWindow('SimplySign Desktop');
+  activateWindow('SimplySign');
   await sleep(500);
+
+  // 4. Enter Username
+  console.log('Entering username into SimplySign Desktop...');
+  sendText(username);
+  await sleep(200);
+  await takeScreenshot('005_username.png');
+
+  // 5. Tab to OTP Field and enter OTP immediately
+  console.log('Tabbing to OTP field and entering token...');
+  sendKeys('{TAB}');
+  await sleep(200);
+  sendText(otp);
+  await sleep(200);
   await takeScreenshot('006_otp.png');
 
   // 6. Submit login dialog
   console.log('Submitting login credentials...');
-  // Ensure SimplySign Desktop has focus before submitting
   activateWindow('SimplySign Desktop');
   activateWindow('SimplySign');
-  await sleep(500);
+  await sleep(300);
   sendKeys('{ENTER}');
   await takeScreenshot('007_submitted.png');
 
