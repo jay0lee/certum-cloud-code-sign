@@ -98,14 +98,14 @@ jobs:
       - name: Sign Executable
         shell: pwsh
         run: |
-          signtool sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} `
+          & "${{ steps.certum.outputs.signtool-path }}" sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} `
             /tr http://time.certum.pl /td SHA256 /fd SHA256 /v `
             dist/myapp.exe
 
       - name: Verify Signature
         shell: pwsh
         run: |
-          signtool verify /pa /v dist/myapp.exe
+          & "${{ steps.certum.outputs.signtool-path }}" verify /pa /v dist/myapp.exe
 
       # Cleanly terminate SimplySign Desktop and unmount certificates post-signing
       - name: Teardown SimplySign Desktop Session
@@ -151,14 +151,14 @@ jobs:
       - name: Sign Binaries
         shell: pwsh
         run: |
-          signtool sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} `
+          & "${{ steps.certum.outputs.signtool-path }}" sign /sha1 ${{ steps.certum.outputs.cert-thumbprint }} `
             /tr http://time.certum.pl /td SHA256 /fd SHA256 /v `
             dist/myapp.exe
 
       - name: Verify Signature
         shell: pwsh
         run: |
-          signtool verify /pa /v dist/myapp.exe
+          & "${{ steps.certum.outputs.signtool-path }}" verify /pa /v dist/myapp.exe
 
       - name: Teardown SimplySign Desktop Session
         if: always()
