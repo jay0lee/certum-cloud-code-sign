@@ -243,15 +243,7 @@ async function cleanupDesktop() {
   sendKeys('{ENTER}');
   await sleep(200);
 
-  // 2. Dismiss WSL update prompt if open by activating and sending ^c and %{F4}
-  activateWindow('wsl');
-  await sleep(200);
-  sendKeys('^c');
-  await sleep(200);
-  sendKeys('%{F4}');
-  await sleep(200);
-
-  // 3. Gracefully close any console host or wsl window that opened
+  // 2. Gracefully request any wsl or WindowsTerminal window to close
   try {
     const ps = `
       Get-Process | Where-Object { $_.ProcessName -in @('wsl', 'WindowsTerminal') -and $_.MainWindowHandle -ne 0 } | ForEach-Object {
@@ -261,7 +253,7 @@ async function cleanupDesktop() {
     execPowerShell(ps);
   } catch (e) {}
 
-  // 4. Send ESC to dismiss Start Menu or open context menus if open
+  // 3. Send ESC to dismiss Start Menu or open context menus if open
   sendKeys('{ESC}');
   await sleep(200);
 
